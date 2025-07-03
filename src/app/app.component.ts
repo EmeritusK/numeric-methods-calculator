@@ -17,6 +17,7 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatTableModule } from '@angular/material/table';
 import { NumericMethodsService, NewtonRaphsonResult, SimpsonResult, EDOResult } from './numeric-methods.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import * as Plotly from 'plotly.js-dist-min';
 
 @Component({
   selector: 'app-root',
@@ -92,7 +93,9 @@ export class AppComponent implements OnInit, AfterViewInit {
   }
 
   ngOnInit() {
-    // Inicialización
+    this.functionForm.valueChanges.subscribe(() => {
+      this.updateChart();
+    });
   }
 
   ngAfterViewInit() {
@@ -108,101 +111,33 @@ export class AppComponent implements OnInit, AfterViewInit {
   }
 
   updateChart() {
-    if (!this.ctx) return;
-
-    // No graficar si la función contiene 'y' y el método no es EDO
     const functionStr = this.functionForm.get('function')?.value || '';
+    // No graficar si es una ecuación diferencial y el método no es EDO
     if (functionStr.includes('y') && this.selectedMethod !== 'edo') {
-      // Limpiar el canvas
-      const canvas = this.chartCanvas.nativeElement;
-      this.ctx.clearRect(0, 0, canvas.width, canvas.height);
+      Plotly.purge('plotlyChart'); // Limpia el gráfico si existe
       return;
     }
-
-    const canvas = this.chartCanvas.nativeElement;
-    const width = canvas.width;
-    const height = canvas.height;
-
-    // Limpiar canvas
-    this.ctx.clearRect(0, 0, width, height);
-
-    // Configurar estilos
-    this.ctx.strokeStyle = '#2196F3';
-    this.ctx.lineWidth = 2;
-    this.ctx.fillStyle = '#333';
-    this.ctx.font = '12px Arial';
-
-    // Dibujar ejes
-    this.ctx.beginPath();
-    this.ctx.moveTo(50, height / 2);
-    this.ctx.lineTo(width - 50, height / 2);
-    this.ctx.stroke();
-
-    this.ctx.beginPath();
-    this.ctx.moveTo(width / 2, 50);
-    this.ctx.lineTo(width / 2, height - 50);
-    this.ctx.stroke();
-
-    // Dibujar función
-    this.ctx.strokeStyle = '#4CAF50';
-    this.ctx.lineWidth = 2;
-    this.ctx.beginPath();
-
     const xMin = this.functionForm.get('xMin')?.value || -5;
     const xMax = this.functionForm.get('xMax')?.value || 5;
+    const plotPoints = this.numericService.generatePlotPoints(functionStr, xMin, xMax, 200);
 
-    // Generar puntos para graficar
-    this.plotPoints = this.numericService.generatePlotPoints(
-      this.functionForm.get('function')?.value || 'x^2 - 4',
-      xMin,
-      xMax,
-      200
-    );
+    const x = plotPoints.map(p => p.x);
+    const y = plotPoints.map(p => p.y);
 
-    if (this.plotPoints.length > 0) {
-      const yMin = Math.min(...this.plotPoints.map(p => p.y));
-      const yMax = Math.max(...this.plotPoints.map(p => p.y));
-      const yRange = yMax - yMin;
+    const layout = {
+      margin: { t: 30, l: 50, r: 30, b: 50 },
+      xaxis: { title: 'x' },
+      yaxis: { title: 'f(x)' },
+      autosize: true
+    };
 
-      // Ajustar rango Y si es muy pequeño
-      const adjustedYMin = yRange < 0.1 ? yMin - 1 : yMin;
-      const adjustedYMax = yRange < 0.1 ? yMax + 1 : yMax;
-
-      this.ctx.moveTo(
-        this.mapX(this.plotPoints[0].x, xMin, xMax, 50, width - 50),
-        this.mapY(this.plotPoints[0].y, adjustedYMin, adjustedYMax, height - 50, 50)
-      );
-
-      for (let i = 1; i < this.plotPoints.length; i++) {
-        const point = this.plotPoints[i];
-        const canvasX = this.mapX(point.x, xMin, xMax, 50, width - 50);
-        const canvasY = this.mapY(point.y, adjustedYMin, adjustedYMax, height - 50, 50);
-
-        if (isFinite(canvasX) && isFinite(canvasY)) {
-          this.ctx.lineTo(canvasX, canvasY);
-        }
-      }
-
-      this.ctx.stroke();
-    }
-
-    // Dibujar etiquetas
-    this.ctx.fillStyle = '#333';
-    this.ctx.fillText('x', width - 30, height / 2 + 20);
-    this.ctx.fillText('f(x)', width / 2 - 20, 30);
-
-    // Dibujar valores en los ejes
-    this.ctx.font = '10px Arial';
-    this.ctx.fillText(xMin.toString(), 50, height / 2 + 15);
-    this.ctx.fillText(xMax.toString(), width - 60, height / 2 + 15);
-  }
-
-  mapX(x: number, xMin: number, xMax: number, canvasMin: number, canvasMax: number): number {
-    return ((x - xMin) / (xMax - xMin)) * (canvasMax - canvasMin) + canvasMin;
-  }
-
-  mapY(y: number, yMin: number, yMax: number, canvasMin: number, canvasMax: number): number {
-    return ((y - yMin) / (yMax - yMin)) * (canvasMax - canvasMin) + canvasMin;
+    Plotly.newPlot('plotlyChart', [{
+      x, y, type: 'scatter', mode: 'lines', line: { color: '#4CAF50' }
+    }], {
+      ...layout,
+      width: document.getElementById('plotlyChart')?.offsetWidth || 800,
+      height: document.getElementById('plotlyChart')?.offsetHeight || 400
+    }, { responsive: true, scrollZoom: true });
   }
 
   onMethodChange(methodId: string) {
